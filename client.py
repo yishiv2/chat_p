@@ -3,91 +3,87 @@ import socket
 from tkinter import *
 from threading import Thread
 
-def receive():
-    while True:
-        try:
-            msg = s.recv(1024).decode("utf8")
-            msg_list.insert(tkinter.END, msg)
-        except Exception as e:
-            print("受信エラー:", e)
-            break
+class ChatClient:
+    def __init__(self, host='127.0.0.1', port=8080):
+        self.host = host
+        self.port = port
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.connect((self.host, self.port))
 
-def send():
-    msg = my_msg.get()
-    my_msg.set("")
-    s.send(bytes(msg, "utf8"))
-    if msg == "#quit":
-        s.close()
-        window.destroy()
+        # GUIの初期化
+        self.window = Tk()
+        self.window.title("Chat Room Application")
+        self.my_msg = StringVar()
+        self.my_msg.set("")
+        self.create_gui()
+        
+        # ユーザー名の取得
+        self.ask_username()
 
-def on_closing():
-    my_msg.set("#quit")
-    send()
+        # 受信スレッドの開始
+        self.receive_thread = Thread(target=self.receive)
+        self.receive_thread.start()
+        
+        self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
+        self.window.mainloop()
 
-def ask_username():
-    username_window = Toplevel(window)
-    username_window.title("ユーザー名の入力")
-    username_label = Label(username_window, text="ユーザー名を入力してください:")
-    username_label.pack()
-    username_entry = Entry(username_window)
-    username_entry.pack()
+    def create_gui(self):
+        message_frame = Frame(self.window, bg="red")
+        message_frame.grid(row=0, column=0, columnspan=2, sticky="nsew")
 
-    def submit_username():
-        username = username_entry.get()
-        s.send(bytes(username, "utf8"))
-        username_window.destroy()
+        scrollbar = Scrollbar(message_frame)
+        scrollbar.pack(side=RIGHT, fill=Y)
 
-    submit_button = Button(username_window, text="送信", command=submit_username)
-    submit_button.pack()
+        self.msg_list = Listbox(message_frame, height=15, width=100, bg="blue", yscrollcommand=scrollbar.set)
+        self.msg_list.pack(side=LEFT, fill=BOTH, expand=True)
+        scrollbar.config(command=self.msg_list.yview)
 
-    window.wait_window(username_window)  # ウィンドウが閉じるまで待機
+        entry_field = Entry(self.window, textvariable=self.my_msg, fg='red')
+        entry_field.grid(row=1, column=0, sticky="ew")
+        send_button = Button(self.window, text="Send", font="Arial", fg="black", command=self.send)
+        send_button.grid(row=1, column=1)
 
-# ウィンドウを作成
-window = Tk()
-window.title("Chat Room Application")
-window.configure(bg="green")
+        self.window.grid_rowconfigure(0, weight=1)
+        self.window.grid_columnconfigure(0, weight=1)
 
-# メッセージフレームを作成
-message_frame = Frame(window, bg="red")
-message_frame.grid(row=0, column=0, columnspan=2, sticky="nsew")
+    def ask_username(self):
+        username_window = Toplevel(self.window)
+        username_window.title("ユーザー名の入力")
+        username_label = Label(username_window, text="ユーザー名を入力してください:")
+        username_label.pack()
+        username_entry = Entry(username_window)
+        username_entry.pack()
 
-# メッセージ変数を作成
-my_msg = StringVar()
-my_msg.set("")
+        def submit_username():
+            username = username_entry.get()
+            self.client_socket.send(bytes(username, "utf8"))
+            username_window.destroy()
 
-# スクロールバー
-scrollbar = Scrollbar(message_frame)
-scrollbar.pack(side=RIGHT, fill=Y)
+        submit_button = Button(username_window, text="送信", command=submit_username)
+        submit_button.pack()
 
-# メッセージリストを作成
-msg_list = Listbox(message_frame, height=15, width=100, bg="blue", yscrollcommand=scrollbar.set)
-msg_list.pack(side=LEFT, fill=BOTH, expand=True)
-scrollbar.config(command=msg_list.yview)
+        self.window.wait_window(username_window)  # ウィンドウが閉じるまで待機
 
-# メッセージ入力フィールドと送信ボタン
-entry_field = Entry(window, textvariable=my_msg, fg='red')
-entry_field.grid(row=1, column=0, sticky="ew")
-send_button = Button(window, text="Send", font="Arial", fg="white", command=send)
-send_button.grid(row=1, column=1)
+    def receive(self):
+        while True:
+            try:
+                msg = self.client_socket.recv(1024).decode("utf8")
+                self.msg_list.insert(tkinter.END, msg)
+            except Exception as e:
+                print("受信エラー:", e)
+                break
 
-# レスポンシブレイアウト設定
-window.grid_rowconfigure(0, weight=1)
-window.grid_columnconfigure(0, weight=1)
+    def send(self):
+        msg = self.my_msg.get()
+        self.my_msg.set("")
+        self.client_socket.send(bytes(msg, "utf8"))
+        if msg == "#quit":
+            self.client_socket.close()
+            self.window.destroy()
 
-# サーバー接続情報
-host = "127.0.0.1"
-port = 8080
+    def on_closing(self):
+        self.my_msg.set("#quit")
+        self.send()
 
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect((host, port))
-
-# ユーザー名の入力
-ask_username()
-
-# メッセージ受信スレッドの開始
-receive_thread = Thread(target=receive)
-receive_thread.start()
-
-# ウィンドウを閉じるイベント
-window.protocol("WM_DELETE_WINDOW", on_closing)
-mainloop()
+if __name__ == "__main__":
+    chat_client = ChatClient()
